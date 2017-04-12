@@ -1,16 +1,35 @@
 from statistics import mode
 
-def getGraph(meta):
-    pks = {}
-    for table in meta:
-        for pk in meta[table]:
-            if pk in pks.keys():
-                pks[pk] = set().union(pks[pk],meta[table])
+def getGraph( mapTables ):
+    mappings = {}
+    for mapTable in mapTables:
+        these_mappings = mapTables[mapTable].getMappings()
+        for this_mapping in these_mappings:
+            if this_mapping in mappings.keys():
+                mappings[this_mapping].union( these_mappings[ this_mapping ])
             else:
-                pks[pk] = meta[table]
-    return(pks)
+                mappings[this_mapping] = these_mappings[ this_mapping ]
+    return( mappings )
 
-def dfs_paths(graph, start, goal):
+def unique( myList ):
+    result = [ ]
+    for x in myList:
+        if x not in result:
+            result.append( x )
+    return( result )
+
+def getAllPaths( graph, startTable, goalTable ):
+    allPaths = list()
+    for startId in startTable.ids:
+        for endId in goalTable.ids:
+            start = startTable.name + "_" + startId.name
+            end   = goalTable.name + "_" + endId.name
+            thesePaths = list( getSomePaths(graph, start,end ) )
+        for path in thesePaths:
+            allPaths.append( path )
+    return( unique( allPaths ) )
+    
+def getSomePaths(graph, start, goal):
     stack = [(start, [start])]
     while stack:
         (vertex, path) = stack.pop()
@@ -20,41 +39,53 @@ def dfs_paths(graph, start, goal):
             else:
                 stack.append((next, path + [next]))
 
-def retrieveValue( pkFrom, pkTo, pkFromValue, tables ):
-    if pkFrom is None or pkTo is None or pkFromValue is None:
-        return None
-    for table in tables:
-        table = tables[table]
-        if pkFrom in table.keys() and pkTo in table.keys():
-            index = table[pkFrom].index( pkFromValue )
-            pkToValue = table[pkTo][index]
-            if pkToValue is not None:
-                return( pkToValue )
 
-def traversePath( thisPath, pkFromValue, tables ):
+def retrieveValue( mtFrom, mtTo, fromCol, toCol, valFrom ):
+    #get the id we're coming from so we can get the local column name
+    for id in mtFrom.ids:
+        if id.name == fromCol:
+            idFrom = id
+
+    for id2 in mtTo.ids:
+        if id2.name == toCol:
+            idTo = id2
+
+    try:
+        #since we're running all paths btw two tables, if your path is starting on a column that isn't relevant it wont have your starting value. Null these out. Should eventually filter these earlier
+        index = mtFrom.dataDict[ idFrom.name_table ].index( valFrom )
+    except:
+        return( None )
+    valTo = mtTo.dataDict[ idTo.name_table ][index]
+    return( valTo )
+
+def traversePath( thisPath, valFrom, tables ):
     mapping = {
                 "thisPath": thisPath,
-                "mappings": [ pkFromValue ]
+                "values": [ valFrom ]
                 }
-    for index, thisPk in enumerate( thisPath ):
+    for index, node in enumerate( thisPath ):
         if index == (len(thisPath)-1):
             return( mapping )
         else:
-            nextPk = thisPath[index+1]
-        mapping["mappings"].append( retrieveValue( thisPk, nextPk, mapping["mappings"][-1], tables ) )
+            nextNode = thisPath[ index+1 ]
+#        print( valFrom )
+        node        = node.split("_")
+        nextNode    = nextNode.split("_")
+        valTo = retrieveValue( tables[ node[0] ], tables[ nextNode[0] ], node[1], nextNode[1], valFrom )
+        mapping["values"].append( valTo )
+        valFrom = valTo
+    return( mapping )
 
-def traversePaths( paths, pkFromValue, tables ):
-    allMappings = {}
+def traversePaths( paths, valFrom, tables ):
+    allMappings = []
     for index, thisPath in enumerate(paths):
-        try:
-            allMappings["path"+str(index)] = traversePath( thisPath, pkFromValue, tables )
-        except:
-            continue
-    return( allMappings)
-
+#        print( thisPath )
+        allMappings.append( traversePath( thisPath, valFrom, tables ) )
+    return( allMappings )
 
 def pickWinningMap( candidateMaps ):
     candidateVals = []
     for candidate in candidateMaps:
-        candidateVals.append(candidateMaps[candidate]["mappings"][-1])
-    return( mode(candidateVals))
+        candidateVals.append(candidate["values"][-1])
+    candidateVals = filter( None, candidateVals )
+    return( mode(candidateVals) )
